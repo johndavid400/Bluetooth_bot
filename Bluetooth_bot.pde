@@ -21,164 +21,275 @@ int M2_B = 2;
 int LED = 13;
 
 // variable to store serial data
-int incomingByte = 0;
+//int incomingByte = 0;
 
 // variable to store speed value
 int speed_val = 255;
+int deadband_high = 20;
+int deadband_low = deadband_high * -1;
+int low = -100;
+int high = 100;
+
+int X_accel_raw;
+int Y_accel_raw;
+int x;
+int y;
+int left;
+int right;
+
+
+String readString;
+char command_end = 'Z';
+char command_begin = '$';
+
+char current_char;
+
 
 //////////////////////////////
 
 
 void setup(){
 
-TCCR2B = TCCR2B & 0b11111000 | 0x01; // change PWM frequency for pins 3 and 11 to 32kHz so there will be no motor whining
+  TCCR2B = TCCR2B & 0b11111000 | 0x01; // change PWM frequency for pins 3 and 11 to 32kHz so there will be no motor whining
 
-// Start serial monitor at 115,200 bps
-Serial.begin(115200);
+  // Start serial monitor at 115,200 bps
+  Serial.begin(115200);
 
-// declare outputs
-pinMode(LED, OUTPUT);
+  // declare outputs
+  pinMode(LED, OUTPUT);
 
-pinMode(M1_A, OUTPUT);
-pinMode(M1_PWM, OUTPUT);
-pinMode(M1_B, OUTPUT);
+  pinMode(M1_A, OUTPUT);
+  pinMode(M1_PWM, OUTPUT);
+  pinMode(M1_B, OUTPUT);
 
-pinMode(M2_A, OUTPUT);
-pinMode(M2_PWM, OUTPUT);
-pinMode(M2_B, OUTPUT);
+  pinMode(M2_A, OUTPUT);
+  pinMode(M2_PWM, OUTPUT);
+  pinMode(M2_B, OUTPUT);
 
-// turn motors Off by default
-M1_stop();
-M2_stop();
+  // turn motors Off by default
+  m1_stop();
+  m2_stop();
 
-delay(500);
+  delay(500);
+
+  readString = "";
 
 }
 
 ////////////////////////////////////
 
+void set_left_value(String the_string){
+
+  if(the_string.substring(0,1) == "X"){
+    char temp[20];
+    the_string.substring(1).toCharArray(temp, 19);
+    int x_val = atoi(temp);
+    X_accel_raw = x_val;    
+  }
+}
+
+void set_right_value(String the_string){
+  if(the_string.substring(0,1) == "Y"){
+    char temp[20];
+    the_string.substring(1).toCharArray(temp, 19);
+    int y_val = atoi(temp);
+    Y_accel_raw = y_val;
+  }
+}
+
+void handle_command(String readString){
+
+  set_left_value(readString);
+  set_right_value(readString);
+
+  // Here you can send the values back to your Computer and read them on the Processing terminal.
+  // Sending these values over Xbee can take slow the sketch down, so I comment them out after testing. 
+
+  Serial.print("X_accel_raw: ");
+  Serial.print(X_accel_raw);
+  Serial.print("     ");
+  Serial.print("Y_accel_raw: ");
+  Serial.print(Y_accel_raw);
+  Serial.print("     ");
+
+
+
+}
+
+
+
 void loop(){
 
-// check for serial data
-if (Serial.available() > 0) {
-// read the incoming byte:
-incomingByte = Serial.read();
-// if available, blink LED and print serial data received.
-digitalWrite(LED, HIGH);
-// say what you got:
-Serial.print("I received: ");
-Serial.println(incomingByte);
-// delay 10 milliseconds to allow serial update time
-delay(10);
+  while (Serial.available()) {
+    current_char = Serial.read();  //gets one byte from serial buffer
 
-// check incoming byte for direction
-// if byte is equal to "46" or "," - raise speed
-if (incomingByte == 46){
-speed_val = speed_val + 5;
-test_speed();
-Serial.println(speed_val);
-}
-// if byte is equal to "44" or "." - lower speed
-else if (incomingByte == 44){
-speed_val = speed_val - 5;
-test_speed();
-Serial.println(speed_val);
-}
-// if byte is equal to "47" or "/" - max speed
-else if (incomingByte == 47){
-speed_val = 255;
-test_speed();
-}
+    if(current_char == command_begin){ // when we get a begin character, start reading
+      readString = "";
+      while(current_char != command_end){ // stop reading when we get the end character
+        current_char = Serial.read();  //gets one byte from serial buffer
+        if(current_char != command_end){
+          //Serial.println(current_char);
+          readString += current_char;
+          delay(10);
+        }
+      }
 
-// if byte is equal to "105" or "i", go forward
-else if (incomingByte == 105){
-M1_forward(speed_val);
-M2_forward(speed_val);
-delay(25);
-}
-// if byte is equal to "106" or "j", go left
-else if (incomingByte == 106){
-M1_reverse(speed_val);
-M2_forward(speed_val);
-delay(25);
-}
-// if byte is equal to "108" or "l", go right
-else if (incomingByte == 108){
-M1_forward(speed_val);
-M2_reverse(speed_val);
-delay(25);
-}
-// if byte is equal to "107" or "k", go reverse
-else if (incomingByte == 107){
-M1_reverse(speed_val);
-M2_reverse(speed_val);
-delay(25);
-}
-// otherwise, stop both motors
-else {
-M1_stop();
-M2_stop();
-}
+      Serial.println(readString);
+      if(current_char == command_end){ // since we have the end character, send the whole command to the command handler and reset readString.
+        //Serial.println("foo");
+        handle_command(readString);
+        readString = "";
+      }
+    } 
+  }
+
+  x = map(X_accel_raw, low, high, -speed_val, speed_val); 
+  y = map(Y_accel_raw ,low, high, -speed_val, speed_val); 
 
 
+
+  // Now we can check the accelerometer values to see what direction the robot should go:
+
+  if (y > deadband_high) {  // if the Y-axis input is above the upper threshold, go FORWARD 
+
+    // Going Forward, now check to see if we should go straight ahead,turn left, or turn right.
+    if (x > deadband_high) { // go forward while turning right proportional to the R/C left/right input
+      left = y;
+      right = y - x;
+      test_speed();
+      m1_forward(left);
+      m2_forward(right);
+      // quadrant 1 - forward and to the right
+    }
+    else if (x < deadband_low) {   // go forward while turning left proportional to the left/right input
+      left = y - (x * -1);  // remember that in this case, x will be a negative number, so multiply by -1
+      right = y;
+      test_speed();
+      m1_forward(left);
+      m2_forward(right);
+      // quadrant 2 - forward and to the left
+    }
+    else {   // left/right stick is centered, go straight forward
+      left = y;
+      right = y;
+      test_speed();
+      m1_forward(left);
+      m2_forward(right);
+      // go forward along Y axis
+    }
+  }
+
+  else if (y < deadband_low) {    // otherwise, if the Up/Down R/C input is below lower threshold, go BACKWARD
+
+    // remember that x is below deadband_low, it will always be a negative number, we need to multiply it by -1 to make it positive.
+    // now check to see if left/right input from R/C is to the left, to the right, or centered.
+    if (x > deadband_high) { // // go backward while turning right proportional to the R/C left/right input
+      left = (y * -1);
+      right = (y * -1) - x;
+      test_speed();
+      m1_reverse(left);
+      m2_reverse(right);
+      // quadrant 4 - go backwards and to the right
+    }
+    else if (x < deadband_low) {   // go backward while turning left proportional to the R/C left/right input
+      left = (y * -1) - (x * -1);
+      right = y * -1;
+      test_speed();
+      m1_reverse(left);
+      m2_reverse(right);   
+      // quadrant 3 - go backwards and to the left
+    }			
+    else {   // left/right stick is centered, go straight backwards
+      left = y * -1; 
+      right = y * -1; 
+      test_speed();
+      m1_reverse(left);
+      m2_reverse(right);
+      // go straight backwards along x axis
+    }
+  }
+
+  else {     // if neither of the above 2 conditions is met, then X (Up/Down) R/C input is centered (neutral)
+
+    // Stop motors!
+    left = 0;
+    right = 0;
+    m1_stop();
+    m2_stop();
+
+  }
+  Serial.print("r: ");
+  Serial.print(right);
+  Serial.print("     ");
+  Serial.print("l: ");
+  Serial.print(left);
+  Serial.println("     ");
+
+
 }
 
-else {
-M1_stop();
-M2_stop();
-digitalWrite(LED, LOW);
-}
-}
+////////////////////////////////////////////////////////////////
 
-void test_speed(){
-// constrain speed value to between 0-255
-if (speed_val > 250){
-speed_val = 255;
-Serial.println(" MAX ");
-}
-if (speed_val < 0){
-speed_val = 0;
-Serial.println(" MIN ");
-}
 
-}
+
+
+
+
+
+
 
 /////////// motor functions ////////////////
 
-void M1_reverse(int x){
-digitalWrite(M1_B, LOW);
-digitalWrite(M1_A, HIGH);
-analogWrite(M1_PWM, x);
+void m1_reverse(int x){
+  digitalWrite(M1_B, LOW);
+  digitalWrite(M1_A, HIGH);
+  analogWrite(M1_PWM, x);
 }
 
-void M1_forward(int x){
-digitalWrite(M1_A, LOW);
-digitalWrite(M1_B, HIGH);
-analogWrite(M1_PWM, x);
+void m1_forward(int x){
+  digitalWrite(M1_A, LOW);
+  digitalWrite(M1_B, HIGH);
+  analogWrite(M1_PWM, x);
 }
 
-void M1_stop(){
-digitalWrite(M1_B, LOW);
-digitalWrite(M1_A, LOW);
-digitalWrite(M1_PWM, LOW);
+void m1_stop(){
+  digitalWrite(M1_B, LOW);
+  digitalWrite(M1_A, LOW);
+  digitalWrite(M1_PWM, LOW);
 }
 
-void M2_forward(int y){
-digitalWrite(M2_B, LOW);
-digitalWrite(M2_A, HIGH);
-analogWrite(M2_PWM, y);
+void m2_forward(int y){
+  digitalWrite(M2_B, LOW);
+  digitalWrite(M2_A, HIGH);
+  analogWrite(M2_PWM, y);
 }
 
-void M2_reverse(int y){
-digitalWrite(M2_A, LOW);
-digitalWrite(M2_B, HIGH);
-analogWrite(M2_PWM, y);
+void m2_reverse(int y){
+  digitalWrite(M2_A, LOW);
+  digitalWrite(M2_B, HIGH);
+  analogWrite(M2_PWM, y);
 }
 
-void M2_stop(){
-digitalWrite(M2_B, LOW);
-digitalWrite(M2_A, LOW);
-digitalWrite(M2_PWM, LOW);
+void m2_stop(){
+  digitalWrite(M2_B, LOW);
+  digitalWrite(M2_A, LOW);
+  digitalWrite(M2_PWM, LOW);
+}
+
+
+
+
+void test_speed(){
+  // constrain speed value to between 0-255
+  if (speed_val > 250){
+    speed_val = 255;
+    //Serial.println(" MAX ");
+  }
+  if (speed_val < 0){
+    speed_val = 0;
+    //Serial.println(" MIN ");
+  }
+
 }
 
 
