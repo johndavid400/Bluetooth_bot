@@ -24,7 +24,8 @@ int LED = 13;
 //int incomingByte = 0;
 
 // variable to store speed value
-int speed_val = 255;
+int speed_val = 75;
+int band_pass = 180;
 int deadband_high = 20;
 int deadband_low = deadband_high * -1;
 int low = -100;
@@ -78,47 +79,40 @@ void setup(){
 
 ////////////////////////////////////
 
-void set_left_value(String the_string){
-
-  if(the_string.substring(0,1) == "X"){
-    char temp[20];
-    the_string.substring(1).toCharArray(temp, 19);
-    int x_val = atoi(temp);
-    X_accel_raw = x_val;    
-  }
-}
-
-void set_right_value(String the_string){
-  if(the_string.substring(0,1) == "Y"){
-    char temp[20];
-    the_string.substring(1).toCharArray(temp, 19);
-    int y_val = atoi(temp);
-    Y_accel_raw = y_val;
-  }
-}
 
 void handle_command(String readString){
 
-  set_left_value(readString);
-  set_right_value(readString);
+  if(readString.substring(0,1) == "X"){
+    char temp[20];
+    readString.substring(1).toCharArray(temp, 19);
+    int x_val = atoi(temp);
+    X_accel_raw = x_val;    
+  }
+  else if(readString.substring(0,1) == "Y"){
+    char temp[20];
+    readString.substring(1).toCharArray(temp, 19);
+    int y_val = atoi(temp);
+    Y_accel_raw = y_val;
+  } 
+  else {
+    //X_accel_raw = 0;
+    //Y_accel_raw = 0;
+  }
 
-  // Here you can send the values back to your Computer and read them on the Processing terminal.
-  // Sending these values over Xbee can take slow the sketch down, so I comment them out after testing. 
-
+  /*
   Serial.print("X_accel_raw: ");
-  Serial.print(X_accel_raw);
-  Serial.print("     ");
-  Serial.print("Y_accel_raw: ");
-  Serial.print(Y_accel_raw);
-  Serial.print("     ");
-
-
-
+   Serial.print(X_accel_raw);
+   Serial.print("     ");
+   Serial.print("Y_accel_raw: ");
+   Serial.print(Y_accel_raw);
+   Serial.print("     ");
+   */
 }
 
 
 
 void loop(){
+
 
   while (Serial.available()) {
     current_char = Serial.read();  //gets one byte from serial buffer
@@ -142,6 +136,9 @@ void loop(){
       }
     } 
   }
+  //Y_accel_raw = analogRead(0);
+  //Y_accel_raw = map(Y_accel_raw, 0, 1023, -100, 100); 
+
 
   x = map(X_accel_raw, low, high, -speed_val, speed_val); 
   y = map(Y_accel_raw ,low, high, -speed_val, speed_val); 
@@ -154,24 +151,24 @@ void loop(){
 
     // Going Forward, now check to see if we should go straight ahead,turn left, or turn right.
     if (x > deadband_high) { // go forward while turning right proportional to the R/C left/right input
-      left = y;
-      right = y - x;
+      left = y + band_pass;
+      right = (y - x)  + band_pass;
       test_speed();
       m1_forward(left);
       m2_forward(right);
       // quadrant 1 - forward and to the right
     }
     else if (x < deadband_low) {   // go forward while turning left proportional to the left/right input
-      left = y - (x * -1);  // remember that in this case, x will be a negative number, so multiply by -1
-      right = y;
+      left = (y - (x * -1)) + band_pass;  // remember that in this case, x will be a negative number, so multiply by -1
+      right = y + band_pass;
       test_speed();
       m1_forward(left);
       m2_forward(right);
       // quadrant 2 - forward and to the left
     }
     else {   // left/right stick is centered, go straight forward
-      left = y;
-      right = y;
+      left = y + band_pass;
+      right = y + band_pass;
       test_speed();
       m1_forward(left);
       m2_forward(right);
@@ -184,24 +181,24 @@ void loop(){
     // remember that x is below deadband_low, it will always be a negative number, we need to multiply it by -1 to make it positive.
     // now check to see if left/right input from R/C is to the left, to the right, or centered.
     if (x > deadband_high) { // // go backward while turning right proportional to the R/C left/right input
-      left = (y * -1);
-      right = (y * -1) - x;
+      left = (y * -1) + band_pass;
+      right = ((y * -1) - x) + band_pass;
       test_speed();
       m1_reverse(left);
       m2_reverse(right);
       // quadrant 4 - go backwards and to the right
     }
     else if (x < deadband_low) {   // go backward while turning left proportional to the R/C left/right input
-      left = (y * -1) - (x * -1);
-      right = y * -1;
+      left = ((y * -1) - (x * -1)) + band_pass;
+      right = (y * -1) + band_pass;
       test_speed();
       m1_reverse(left);
       m2_reverse(right);   
       // quadrant 3 - go backwards and to the left
     }			
     else {   // left/right stick is centered, go straight backwards
-      left = y * -1; 
-      right = y * -1; 
+      left = (y * -1) + band_pass; 
+      right = (y * -1) + band_pass; 
       test_speed();
       m1_reverse(left);
       m2_reverse(right);
@@ -218,25 +215,16 @@ void loop(){
     m2_stop();
 
   }
+
   Serial.print("r: ");
   Serial.print(right);
   Serial.print("     ");
   Serial.print("l: ");
   Serial.print(left);
   Serial.println("     ");
-
+  delay(300);
 
 }
-
-////////////////////////////////////////////////////////////////
-
-
-
-
-
-
-
-
 
 /////////// motor functions ////////////////
 
@@ -291,6 +279,8 @@ void test_speed(){
   }
 
 }
+
+
 
 
 
