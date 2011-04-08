@@ -24,12 +24,12 @@ int LED = 13;
 //int incomingByte = 0;
 
 // variable to store speed value
-int speed_val = 75;
-int band_pass = 180;
-int deadband_high = 20;
+int speed_val = 65;
+int band_pass = 190;
+int deadband_high = 10;
 int deadband_low = deadband_high * -1;
-int low = -100;
-int high = 100;
+int low = -70;
+int high = 70;
 
 int X_accel_raw;
 int Y_accel_raw;
@@ -136,14 +136,12 @@ void loop(){
       }
     } 
   }
-  //Y_accel_raw = analogRead(0);
-  //Y_accel_raw = map(Y_accel_raw, 0, 1023, -100, 100); 
 
+  //  Y_accel_raw = analogRead(0);
+  //  Y_accel_raw = map(Y_accel_raw, 0, 1023, -70, 70); 
 
   x = map(X_accel_raw, low, high, -speed_val, speed_val); 
   y = map(Y_accel_raw ,low, high, -speed_val, speed_val); 
-
-
 
   // Now we can check the accelerometer values to see what direction the robot should go:
 
@@ -208,21 +206,41 @@ void loop(){
 
   else {     // if neither of the above 2 conditions is met, then X (Up/Down) R/C input is centered (neutral)
 
-    // Stop motors!
-    left = 0;
-    right = 0;
-    m1_stop();
-    m2_stop();
+    if (x > deadband_high) { // // go backward while turning right proportional to the R/C left/right input
+      left = x + band_pass;
+      right = left;
+      test_speed();
+      m1_forward(left);
+      m2_reverse(right);
+      // quadrant 4 - go backwards and to the right
+    }
+    else if (x < deadband_low) {   // go backward while turning left proportional to the R/C left/right input
+      left = (x * -1) + band_pass;
+      right = left;
+      test_speed();
+      m1_reverse(left);
+      m2_forward(right);  
+      // quadrant 3 - go backwards and to the left
+    }			 
+
+    else{
+      // Stop motors!
+      left = 0;
+      right = 0;
+      m1_stop();
+      m2_stop();
+    }
 
   }
 
-  Serial.print("r: ");
-  Serial.print(right);
-  Serial.print("     ");
-  Serial.print("l: ");
-  Serial.print(left);
-  Serial.println("     ");
-  delay(300);
+
+//  Serial.print("r: ");
+//  Serial.print(right);
+//  Serial.print("     ");
+//  Serial.print("l: ");
+//  Serial.print(left);
+//  Serial.println("     ");
+//  delay(300);
 
 }
 
@@ -279,12 +297,5 @@ void test_speed(){
   }
 
 }
-
-
-
-
-
-
-
 
 
